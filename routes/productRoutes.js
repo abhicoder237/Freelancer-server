@@ -1,4 +1,4 @@
- import { Router } from "express";
+import { Router } from "express";
 import {
   createProduct,
   getAllProducts,
@@ -28,67 +28,20 @@ import { productValidators }       from "../middleware/validateMiddleware.js";
 const router = Router();
 
 // ─────────────────────────────────────────
-// MULTER ERROR HANDLER
-// Multer errors Express ke normal error
-// handler se catch nahi hote — alag handle karo
-// ─────────────────────────────────────────
-
-const multerErrorHandler = (err, req, res, next) => {
-  if (err) {
-    // Multer specific errors
-    if (err.code === "LIMIT_FILE_SIZE") {
-      return res.status(400).json({
-        success:    false,
-        statusCode: 400,
-        message:    "File too large. Maximum allowed size is 10MB.",
-      });
-    }
-    if (err.code === "LIMIT_FILE_COUNT") {
-      return res.status(400).json({
-        success:    false,
-        statusCode: 400,
-        message:    "Too many files. Maximum 5 files allowed.",
-      });
-    }
-    if (err.code === "LIMIT_UNEXPECTED_FILE") {
-      return res.status(400).json({
-        success:    false,
-        statusCode: 400,
-        message:    `Unexpected field: ${err.field}`,
-      });
-    }
-    // File type error from fileFilter
-    if (err.message && err.message.includes("Invalid file type")) {
-      return res.status(400).json({
-        success:    false,
-        statusCode: 400,
-        message:    err.message,
-      });
-    }
-    // Other multer errors
-    return res.status(400).json({
-      success:    false,
-      statusCode: 400,
-      message:    err.message || "File upload failed.",
-    });
-  }
-  next();
-};
-
-// ─────────────────────────────────────────
-// DYNAMIC MULTER MIDDLEWARE
-// Product images ke liye
+// CUSTOM MULTER MIDDLEWARE
+// Handles multer errors properly
 // ─────────────────────────────────────────
 
 const productImageUpload = (req, res, next) => {
-  // Product se client info lo
-  const clientSlug = req.clientSlug || req.uploadClientSlug || "general";
+  const clientSlug = req.uploadClientSlug || req.clientSlug || "general";
   const upload     = uploadMiddleware("products", clientSlug);
 
   upload.array("images", 5)(req, res, (err) => {
     if (err) {
-      // Multer error — directly respond
-      if (err.message && err.message.includes("Invalid file type")) {
+      if (
+        err.message?.includes("Invalid file type") ||
+        err.code === "INVALID_FILE_TYPE"
+      ) {
         return res.status(400).json({
           success:    false,
           statusCode: 400,
@@ -102,6 +55,13 @@ const productImageUpload = (req, res, next) => {
           message:    "File too large. Maximum 10MB allowed.",
         });
       }
+      if (err.code === "LIMIT_FILE_COUNT") {
+        return res.status(400).json({
+          success:    false,
+          statusCode: 400,
+          message:    "Too many files. Maximum 5 files allowed.",
+        });
+      }
       return res.status(400).json({
         success:    false,
         statusCode: 400,
@@ -113,28 +73,30 @@ const productImageUpload = (req, res, next) => {
 };
 
 // ─────────────────────────────────────────
-// PUBLIC ROUTES
+// ⚠️  ROUTE ORDER MATTERS — CRITICAL
+// Static routes MUST come before dynamic /:id
 // ─────────────────────────────────────────
 
-router.get("/public",     resolveClient, getPublicProducts);
-router.get("/featured",   resolveClient, getFeaturedProducts);
-router.get("/categories", resolveClient, getCategories);
-
-// ─────────────────────────────────────────
-// MIXED
-// ─────────────────────────────────────────
-
+// ── 1. STATIC PUBLIC ROUTES ──────────────
 router.get(
-  "/:identifier",
-  optionalAuth,
-  optionalResolveClient,
-  getProduct
+  "/public",
+  resolveClient,
+  getPublicProducts
 );
 
-// ─────────────────────────────────────────
-// PRIVATE — admin panel
-// ─────────────────────────────────────────
+router.get(
+  "/featured",
+  resolveClient,
+  getFeaturedProducts
+);
 
+router.get(
+  "/categories",
+  resolveClient,
+  getCategories
+);
+
+// ── 2. COLLECTION ROUTES ─────────────────
 router.get(
   "/",
   protect,
@@ -152,6 +114,7 @@ router.post(
   createProduct
 );
 
+// ── 3. BULK OPERATIONS — before /:id ─────
 router.put(
   "/bulk-status",
   protect,
@@ -159,38 +122,16 @@ router.put(
   bulkUpdateStatus
 );
 
-router.put(
-  "/:id",
-  protect,
-  attachRoleContext,
-  productValidators.update,
-  updateProduct
-);
-
-router.put(
-  "/:id/status",
-  protect,
-  attachRoleContext,
-  updateProductStatus
-);
-
-router.put(
-  "/:id/toggle-featured",
-  protect,
-  attachRoleContext,
-  toggleFeatured
-);
-
-// ─────────────────────────────────────────
-// IMAGE ROUTES — Fixed multer error handling
-// ─────────────────────────────────────────
+// ── 4. SUB-RESOURCE ROUTES — before /:id ─
+// ⚠️ These MUST be before router.get("/:identifier")
+// Otherwise /:identifier matches "bulk-status", etc.
 
 router.post(
   "/:id/images",
   protect,
   optionalResolveClient,
   injectClientToUpload("products"),
-  productImageUpload,      // ✅ Custom multer with error handling
+  productImageUpload,
   addProductImages
 );
 
@@ -208,9 +149,35 @@ router.put(
   setPrimaryImage
 );
 
-// ─────────────────────────────────────────
-// DELETE
-// ─────────────────────────────────────────
+router.put(
+  "/:id/toggle-featured",
+  protect,
+  attachRoleContext,
+  toggleFeatured
+);
+
+router.put(
+  "/:id/status",
+  protect,
+  attachRoleContext,
+  updateProductStatus
+);
+
+// ── 5. SINGLE RESOURCE ROUTES ────────────
+router.get(
+  "/:identifier",
+  optionalAuth,
+  optionalResolveClient,
+  getProduct
+);
+
+router.put(
+  "/:id",
+  protect,
+  attachRoleContext,
+  productValidators.update,
+  updateProduct
+);
 
 router.delete(
   "/:id",
