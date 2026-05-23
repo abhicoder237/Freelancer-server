@@ -110,40 +110,16 @@ if (process.env.NODE_ENV === "development") {
 // ─────────────────────────────────────────
 // CORS CONFIGURATION
 // ─────────────────────────────────────────
-
-const allowedOrigins = [
-  process.env.CLIENT_URL,
-  "http://localhost:3000",
-  "http://localhost:5173",  // Vite default
-  "http://localhost:4173",  // Vite preview
-].filter(Boolean); // Remove undefined values
-
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // Allow no-origin requests (Postman, mobile apps)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(
-          new Error(`CORS blocked: Origin '${origin}' not allowed.`)
-        );
-      }
-    },
-    credentials:    true,
-    methods:        ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "Authorization",
-      "x-client-slug",     // Multi-tenant identifier
-      "x-requested-with",
+    origin: [
+      "https://freelancer-client-seven.vercel.app",
+      "http://localhost:5173",
     ],
-    exposedHeaders: ["set-cookie"],
+    credentials: true,
   })
 );
-
+ 
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
