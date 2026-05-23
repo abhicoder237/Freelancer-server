@@ -144,6 +144,12 @@ app.use(
   })
 );
 
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "API Running Successfully 🚀"
+  });
+});
 // ─────────────────────────────────────────
 // HEALTH CHECK
 // Used by deployment platforms to verify
