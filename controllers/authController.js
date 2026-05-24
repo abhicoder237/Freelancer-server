@@ -117,84 +117,66 @@ const register = asyncHandler(async (req, res) => {
 const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // ── Find user with password ──────────────
-  // password is select: false — must explicitly select
   const user = await User.findOne({ email }).select(
     "+password +loginAttempts +lockUntil"
   );
 
-  // ── User not found ───────────────────────
   if (!user) {
-    throw new ApiError(
-      401,
-      "Invalid email or password."
-      // Vague message — don't reveal if email exists
-    );
+    throw new ApiError(401, "Invalid email or password.");
   }
 
-  // ── Account inactive ─────────────────────
   if (!user.isActive) {
-    throw new ApiError(
-      403,
-      "Your account has been deactivated. Please contact support."
-    );
+    throw new ApiError(403, "Your account has been deactivated.");
   }
 
-  // ── Account locked ───────────────────────
   if (user.isLocked()) {
     const minutesLeft = Math.ceil(
       (user.lockUntil - Date.now()) / (1000 * 60)
     );
     throw new ApiError(
       423,
-      `Account locked due to too many failed attempts. Try again in ${minutesLeft} minute(s).`
+      `Account locked. Try again in ${minutesLeft} minute(s).`
     );
   }
 
-  // ── Verify password ──────────────────────
   const isPasswordCorrect = await user.comparePassword(password);
 
   if (!isPasswordCorrect) {
-    // Increment failed attempts
     await user.incrementLoginAttempts();
-
     const attemptsLeft = 5 - (user.loginAttempts + 1);
-
     throw new ApiError(
       401,
       attemptsLeft > 0
-        ? `Invalid email or password. ${attemptsLeft} attempt(s) remaining before account lock.`
-        : "Account locked due to too many failed attempts. Try again in 2 hours."
+        ? `Invalid email or password. ${attemptsLeft} attempt(s) remaining.`
+        : "Account locked due to too many failed attempts."
     );
   }
 
-  // ── Reset login attempts on success ──────
   await user.resetLoginAttempts();
 
-  // ── Generate token + set cookie ──────────
   const token = generateTokenAndSetCookie(user, res);
 
-  // ── Populate client if clientadmin ───────
+  // ✅ Always populate client — for ALL roles
+  // This ensures client.slug is available in frontend
   let populatedUser = user;
-  if (user.role === "clientadmin" && user.client) {
+
+  if (user.client) {
     populatedUser = await User.findById(user._id).populate({
       path:   "client",
-      select: "name slug logo plan isActive",
+      select: "name slug logo plan isActive businessType",
     });
   }
 
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        {
-          user:  safeUserResponse(populatedUser),
-          token, // Also send in body for API clients (mobile/Postman)
-        },
-        "Logged in successfully."
-      )
-    );
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        user:  safeUserResponse(populatedUser),
+        token,
+      },
+      "Logged in successfully."
+    )
+  );
 });
 
 // ─────────────────────────────────────────
